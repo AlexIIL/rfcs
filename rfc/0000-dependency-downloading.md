@@ -140,6 +140,12 @@ Assets have very similar structure to jar files, with the exception of the metad
 * [size](#the-size-field) - The size of that asset file, in bytes.
 * [hashes](#the-hashes-field) - The hashes of that asset file, to ensure we download the correct file.
 
+--------------------
+
+ALEXIIL: EVERYTHING  ABOVE THIS LINE IS FINISHED (in theory - apart from proofreading)
+
+----------------------
+
 ### Cache folders
 
 By default quilt will download jars and assets to a single central cache folder. This will be platform-specific, but include a folder `quilt_loader` somewhere.

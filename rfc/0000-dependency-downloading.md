@@ -82,8 +82,7 @@ This contains all hashes of that jar file. All hashes that quilt loader recognis
 
 In addition, one of the hashes must be:
 
-* Considered to be a "cryptographic hash function"
-* Not considered to be "broken"
+* Not considered broken.
 * Present in the `MessageDigest Algorithms` section of the `Java Security Standard Algorithm Names` specification (JE 16's spec is here: https://docs.oracle.com/en/java/javase/16/docs/specs/security/standard-names.html#messagedigest-algorithms).
 
 (This rules out `MD2`, `MD5`, and `SHA-1` from that document, leaving only variants of SHA 2 and SHA 3).
@@ -91,6 +90,8 @@ In addition, one of the hashes must be:
 It is recommened that mods use the latest hash version supported by the JVM they they depend on (so `SHA3` based algorithms for java 9 and up, `SHA2` algorithms for java 8).
 
 It's not recommened for mods to include multiple hashes of the same type - for example including `SHA3-224` and `SHA3-256` is considered to be useless.
+
+Including multiple different hashes is probably a good idea, but we'll need to look into whether this really matters later on.
 
 ##### The `metadata` field
 
@@ -112,6 +113,7 @@ All of the fields have the same meaning as declared in the main specification. I
     * `breaks` - optional.
     * `repositories` - optional.
     * `metadata` - optional. (All fields under metadata are optional, except for `icon`).
+    * `downloadable_assets` - optional.
 * `minecraft` - optional
     * `environment` - optional.
 

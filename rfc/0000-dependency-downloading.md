@@ -78,20 +78,22 @@ This is the raw size of the jar file, in bytes.
 |--------|----------|
 | Object | True     |
 
-This contains all hashes of that jar file. All hashes that quilt loader recognises must match the hash of the downloaded jar file. At least one of the hash types must be recognised in order to download and verify the file. 
+This contains all hashes of that jar file, mapped from hash name to base64 encoded hash value. All hashes that quilt loader recognises must match the hash of the downloaded jar file. At least one of the hash types must be recognised in order to download and verify the file.
 
 In addition, one of the hashes must be:
 
 * Not considered broken.
 * Present in the `MessageDigest Algorithms` section of the `Java Security Standard Algorithm Names` specification (JE 16's spec is here: https://docs.oracle.com/en/java/javase/16/docs/specs/security/standard-names.html#messagedigest-algorithms).
 
-(This rules out `MD2`, `MD5`, and `SHA-1` from that document, leaving only variants of SHA 2 and SHA 3).
+(This rules out `MD2`, `MD5`, and `SHA-1` from that document, leaving only variants of SHA 2 and SHA 3. Note that this doesn't disallow mods from including hashes for any of these algorithms, just that they aren't sufficient. They will still be checked for validity though).
 
 It is recommened that mods use the latest hash version supported by the JVM they they depend on (so `SHA3` based algorithms for java 9 and up, `SHA2` algorithms for java 8).
 
-It's not recommened for mods to include multiple hashes of the same type - for example including `SHA3-224` and `SHA3-256` is considered to be useless.
+It's not recommened for mods to include multiple hashes of the same type - for example including `SHA3-224` and `SHA3-256` is considered to be useless. (TODO: check this)
 
 Including multiple different hashes is probably a good idea, but we'll need to look into whether this really matters later on.
+
+For asset objects one hash value may be empty - this indicates that the `identifier` field contains the hash instead.
 
 ##### The `metadata` field
 
@@ -136,28 +138,86 @@ Additional fields may be specified for plugins to use.
 
 #### Downloadable Asset Objects
 
-Assets have very similar structure to jar files, with the exception of the metadata field (which is missing).
+Assets have very similar structure to jar files.
 
 * [name](#the-name-field) - The name of the asset file.
+* [identifier](the-identifier-field) - The identifier of the asset file.
 * [size](#the-size-field) - The size of that asset file, in bytes.
 * [hashes](#the-hashes-field) - The hashes of that asset file, to ensure we download the correct file.
 
---------------------
+##### The `identifier` field
+
+| Type   | Required |
+|--------|----------|
+| String | True     |
+
+This is the actual path to download from the server. Unlike mods this is needed since assets don't normally include their version, so we need a different way to identify assets.
+
+This may either be a hash value, or a path. Hashes are stored together (and can be used by any mod - duplicate assets of this sort are only downloaded once), wheras paths are absolute (although they may be prefixed with a modid, or a groupid and a modid, separated by a colon.
+
+For example, if a mod called `random-menu-backgrounds` with a group of `com.example` contained assets:
+
+* `img/panorama/hills/1.png` would be stored in `com.example/random-menu-backgrounds/img/panorama/hills/1.png`
+* `backgrounds:img/panorama/hills/1.png` would be stored in `com.example/backgrounds/img/panorama/hills/1.png`
+* `org.quiltmc:backgrounds:img/panorama/hills/1.png` would be stored in `org.quiltmc/backgrounds/img/panorama/hills/1.png`
+
+### Cache folders
+
+By default quilt will download jars and assets to a single central cache folder. This will be platform-specific, but include a folder called `quilt_loader` somewhere.
+
+The location of this can be changed via the system property `quilt.cache_folder`, or via a config file, stored directly in the minecraft folder.
+
+Additional cache folders that quilt can read (but won't write to) can be specified with the system property `quilt.cache_read_folder`. (TODO: How can we specify multiple additional folders? Do we need multiple additional folders?)
+
+All cache folders will use the following layout:
+
+* `README.txt`: This describes the layout, what this is used for, and a note that any of the folders or files can be deleted safely without preventing the current mod set from being played.
+* `assets`
+    * `<hash-type>`: I.E `SHA-256` or `SHA3-512`.
+        * `<2 letters of the hash value>`
+            * `<hash-value>`
+                * `<file-name>`
+    * `named`
+        * `<group-id>`
+            * `<mod-id>`
+                * `<asset-path>`
+* `jars`
+    * `<group-id>`
+        * `<mod-id>`
+            * `file-name.jar`: This is identical to value in the `name` field.
+
+### Behaviour
+
+During each loader plugin cycle:
+
+* For each selected mod that declares downloadable assets it will check to see if they are already present. If not they will be added to a download queue.
+* For each selected tentative mod (I.E. one that isn't present in a mods folder, but is found in the `downloadable_mods` list) it will be added to a download queue.
+
+If the download queue isn't empty (and hasn't been disabled or always-enabled) then it will be shown to the user. (This should show information about each mod to download, assets to download, and the total size of what needs to be downloaded).
+
+If downloading is disabled then the next step is skipped, and instead a "missing mods / assets" error message is displayed to the user.
+
+The download queue will have the following options:
+
+* `Cancel download`: This will disallow anything else from being added to the download queue in this launch of quilt-loader, and result in the error message as mentioned above.
+* `Never download`: This will change a config option in this instance preventing the download queue from being used in that instance, and the same behaviour as above.
+* `Download all`: This will proced to download everything according to the next step.
+* `Always download`: procedes to the next step, and also prevents this download queue from appearing again in this instance.
+
+Mods and assets will be downloaded from `https://maven.quiltmc.org`, and any repositories specified in the `repositories` field in `quilt_loader`. (At first only quiltmc.org itself and whitelisted mavens will be permitted, but later on this will be changed to a blacklist where only certain mavens will be disallowed (for example maven central).
+
+Mods are downloaded using the following URL format: `<repository>/<group-id>/<mod-id>/<version>/<file-name>`.
+
+Assets are downloaded using a slightly different format: `<repository>/<asset-identifier>`
+
+After downloading mods to the cache (or if they are already present in the cache, but not found in the `<game-dir>/quilt_loader/downloaded_mods` folder) then they will be copied over, and then loaded for the next cycle.
+This `downloaded_mods` folder will use the same file layout as a normal cache folder.
+
+----------------------
 
 ALEXIIL: EVERYTHING  ABOVE THIS LINE IS FINISHED (in theory - apart from proofreading)
 
 ----------------------
-
-### Cache folders
-
-By default quilt will download jars and assets to a single central cache folder. This will be platform-specific, but include a folder `quilt_loader` somewhere.
-
-The location of this can be changed via the system property "quilt.cache_folder".
-
-Additional cache folders that quilt can read (but won't write to) can be specified with the system property "quilt."
-
-
-
 
 
 ## Drawbacks
@@ -166,6 +226,8 @@ Why should we not do this?
 
 
 ## Rationale and Alternatives
+
+Maybe assets should only be identified by their hash?
 
 - Why is this the best possible design?
 - What other designs are possible and why should we choose this one instead?

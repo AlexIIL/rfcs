@@ -1,6 +1,6 @@
 ## Summary
 
-This RFC describes how downloadable jars and assets should be specified in a
+This RFC describes how downloadable jars should be specified in a
 quilt.mod.json file, and how quilt loader will download and store those
 downloadable files.
 
@@ -12,10 +12,7 @@ and install APIs and libraries in addition to the mods they want to use. Adding 
 way for Quilt Loader to fetch dependencies dynamically will help ease this headache
 and make Quilt a more appealing option for new mod users.
 
-Some mods contain large assets, for example video or audio files - and these files
-rarely change between releases of a mod. Being able to download these separately
-from a mod jar would make the mod file much smaller, and make downloading updates
-much quicker than redownloading the whole file.
+This should also help reduce the 
 
 
 
@@ -26,24 +23,33 @@ much quicker than redownloading the whole file.
 The quilt.mod.json spec will need to be changed to add these new fields.
 
 - [quilt_loader](https://github.com/QuiltMC/rfcs/blob/master/specification/0002-quilt.mod.json.md#the-quilt_loader-field) - The existing "quilt_loader" field.
+    - [downloadable_group](#the-downloadable-group-field)
     - [downloadable_jars](#the-downloadable-jars-field) - All jar files that may be used for dependency downloading
     - [downloadable_assets](#the-downloadable_assets-fields) - All assets that should be loaded before the mod can be used.
+
+#### The `downloadable_group` field
+
+| Type   | Required |
+|--------|----------|
+| String | False    |
+
+This indicates that this mod should only be specified as downloadable if all other mods in the same group are also specified as downloadable.
+
+This is useful for library sub-mods which depend on an exact version of a common "core" library mods, for example QSL or LibBlockAttributes.
+
+For a more concrete example, lets use LibBlockAttributes, which has 3 modules:
+
+* "libblockattributes_core"
+* "libblockattributes_items"
+* "libblockattributes_fluids"
 
 #### The `downloadable_jars` field
 
 | Type   | Required |
 |--------|----------|
-| Array  | False    |
+| Array or String  | False    |
 
-An array of [Downloadable Jar Objects](#downloadable-jar-objects).
-
-#### The `downloadable_assets` field
-
-| Type   | Required |
-|--------|----------|
-| Array  | False    |
-
-An array of [Downloadable Asset Objects](#downloadable-asset-objects) describing assets that should all be downloaded before launching the mod.
+An array of Strings, where each string references a json file (contained in this mod) which either contains [Downloadable Jar Objects](#downloadable-jar-objects) directly, or an array of downloadable jar objects.
 
 #### Downloadable Jar Objects
 
@@ -54,7 +60,11 @@ Mod installers and packages *may* wish to pre-download all jar files specified h
 * [name](#the-name-field) - The name of the jar file.
 * [size](#the-size-field) - The size of that jar file, in bytes.
 * [hashes](#the-hashes-field) - The hashes of that jar file, to ensure we download the correct file.
-* [metadata](#the-metadata-field) - A stripped down version of the quilt.mod.json file in that jar.
+* [folder](#the-folder-field) - A folder (in this jar file) containing metadata for the file
+
+// How do we specify any additional metadata required for downloading?
+// Like, maven needs group, name, possibly others?
+// I'm sure curseforge would like mods to include their project ID and file ID
 
 ##### The `name` field
 
@@ -87,37 +97,39 @@ In addition, one of the hashes must be:
 
 (This rules out `MD2`, `MD5`, and `SHA-1` from that document, leaving only variants of SHA 2 and SHA 3. Note that this doesn't disallow mods from including hashes for any of these algorithms, just that they aren't sufficient. They will still be checked for validity though).
 
-It is recommened that mods use the latest hash version supported by the JVM they they depend on (so `SHA3` based algorithms for java 9 and up, `SHA2` algorithms for java 8).
+It is recommended that mods use the latest hash version supported by the JVM they they depend on (so `SHA3` based algorithms for java 9 and up, `SHA2` algorithms for java 8).
 
-It's not recommened for mods to include multiple hashes of the same type - for example including `SHA3-224` and `SHA3-256` is considered to be useless. (TODO: check this)
+It's not recommended for mods to include multiple hashes of the same type - for example including `SHA3-224` and `SHA3-256` is considered to be useless. (TODO: check this)
 
 Including multiple different hashes is probably a good idea, but we'll need to look into whether this really matters later on.
 
-For asset objects one hash value may be empty - this indicates that the `identifier` field contains the hash instead.
-
-##### The `metadata` field
+##### The `folder` field
 
 | Type   | Required |
 |--------|----------|
-| Object | True     |
+| String | True     |
 
-This contains a subset of the main quilt.mod.json specifiection, which is intended to be used to list all required dependencies before they are downloaded. (However omitting parts of this object isn't a problem - it just means the user may be asked to download files multiple times).
+This points to a folder in this jar file, which contains all metadata needed by that file to perform dependency downloading. This folder must contain a `quilt.mod.json` file directly, which contains the metadata for that mod. Mods loaded by custom loader plugins, and fabric mods, are not permitted to be automatically downloaded.
+It may optionally contain other files useful when downloading dependencies, such as icon files or (partial) language files.
+These extra files do not need to match their real counterparts.
 
-All of the fields have the same meaning as declared in the main specification. If a field is present then it must be the same as the same field in the downloadable file.
+The `quilt.mod.json` file should not be a copy of the original file - instead some fields should be removed, and the `downloadable_jars` should be pre-processed:
 
-* `schema_version` - required.
-* `quilt_loader` - required.
-    * `group` - required
-    * `id` - required.
-    * `provides` - optional.
-    * `version` - required.
-    * `depends` - optional.
-    * `breaks` - optional.
+All of the fields have the same meaning as declared in the main specification, and must be the same as in the real downloadable file.
+
+* `schema_version`
+* `quilt_loader`
+    * `group`
+    * `id`
+    * `provides`
+    * `version`
+    * `depends`
+    * `breaks`
+    * `load_type`
     * `repositories` - optional.
-    * `metadata` - optional. (All fields under metadata are optional, except for `icon`).
-    * `downloadable_assets` - optional.
-* `minecraft` - optional
-    * `environment` - optional.
+    * `metadata` - optional. (All fields under metadata are optional).
+* `minecraft`
+    * `environment`
 
 If any of the following fields are present then it is considered an error. (These fields should be stripped when copying the quilt.mod.json from the original file).
 
@@ -126,40 +138,12 @@ If any of the following fields are present then it is considered an error. (Thes
     * `plugins`
     * `jars`
     * `language_adapters`
-    * `load_type`
-    * under `metadata`:
-        * `icon`. (Since these icons would be in the missing jar file it's not possible to use this).
     * `downloadable_jars`: Downloadable jars are expected to be collapsed down into the main array, and duplicates removed.
 * `mixin`
 * `access_widener`
 
 
 Additional fields may be specified for plugins to use.
-
-#### Downloadable Asset Objects
-
-Assets have very similar structure to jar files.
-
-* [name](#the-name-field) - The name of the asset file.
-* [identifier](the-identifier-field) - The identifier of the asset file.
-* [size](#the-size-field) - The size of that asset file, in bytes.
-* [hashes](#the-hashes-field) - The hashes of that asset file, to ensure we download the correct file.
-
-##### The `identifier` field
-
-| Type   | Required |
-|--------|----------|
-| String | True     |
-
-This is the actual path to download from the server. Unlike mods this is needed since assets don't normally include their version, so we need a different way to identify assets.
-
-This may either be a hash value, or a path. Hashes are stored together (and can be used by any mod - duplicate assets of this sort are only downloaded once), wheras paths are absolute (although they may be prefixed with a modid, or a groupid and a modid, separated by a colon.
-
-For example, if a mod called `random-menu-backgrounds` with a group of `com.example` contained assets:
-
-* `img/panorama/hills/1.png` would be stored in `com.example/random-menu-backgrounds/img/panorama/hills/1.png`
-* `backgrounds:img/panorama/hills/1.png` would be stored in `com.example/backgrounds/img/panorama/hills/1.png`
-* `org.quiltmc:backgrounds:img/panorama/hills/1.png` would be stored in `org.quiltmc/backgrounds/img/panorama/hills/1.png`
 
 ### Cache folders
 
@@ -172,15 +156,6 @@ Additional cache folders that quilt can read (but won't write to) can be specifi
 All cache folders will use the following layout:
 
 * `README.txt`: This describes the layout, what this is used for, and a note that any of the folders or files can be deleted safely without preventing the current mod set from being played.
-* `assets`
-    * `<hash-type>`: I.E `SHA-256` or `SHA3-512`.
-        * `<2 letters of the hash value>`
-            * `<hash-value>`
-                * `<file-name>`
-    * `named`
-        * `<group-id>`
-            * `<mod-id>`
-                * `<asset-path>`
 * `jars`
     * `<group-id>`
         * `<mod-id>`
@@ -190,32 +165,31 @@ All cache folders will use the following layout:
 
 During each loader plugin cycle:
 
-* For each selected mod that declares downloadable assets it will check to see if they are already present. If not they will be added to a download queue.
 * For each selected tentative mod (I.E. one that isn't present in a mods folder, but is found in the `downloadable_mods` list) it will be added to a download queue.
 
-If the download queue isn't empty (and hasn't been disabled or always-enabled) then it will be shown to the user. (This should show information about each mod to download, assets to download, and the total size of what needs to be downloaded).
+If the download queue isn't empty (and hasn't been disabled or always-enabled) then it will be shown to the user. (This should show information about each mod to download, and the total size of what needs to be downloaded).
 
-If downloading is disabled then the next step is skipped, and instead a "missing mods / assets" error message is displayed to the user.
+If downloading is disabled then the next step is skipped, and instead a "missing mods" error message is displayed to the user.
 
 The download queue will have the following options:
 
 * `Cancel download`: This will disallow anything else from being added to the download queue in this launch of quilt-loader, and result in the error message as mentioned above.
 * `Never download`: This will change a config option in this instance preventing the download queue from being used in that instance, and the same behaviour as above.
-* `Download all`: This will proced to download everything according to the next step.
-* `Always download`: procedes to the next step, and also prevents this download queue from appearing again in this instance.
+* `Download all`: This will proceed to download everything according to the next step.
+* `Always download`: proceeds to the next step, and also prevents this download queue from appearing again in this instance.
 
-Mods and assets will be downloaded from `https://maven.quiltmc.org`, and any repositories specified in the `repositories` field in `quilt_loader`. (At first only quiltmc.org itself and whitelisted mavens will be permitted, but later on this will be changed to a blacklist where only certain mavens will be disallowed (for example maven central).
+Mods will be downloaded from `https://maven.quiltmc.org`, and any repositories specified in the `repositories` field in `quilt_loader`. (At first only quiltmc.org itself and whitelisted mavens will be permitted, but later on this will be changed to a blacklist where only certain mavens will be disallowed (for example maven central).
 
+//...no
 Mods are downloaded using the following URL format: `<repository>/<group-id>/<mod-id>/<version>/<file-name>`.
 
-Assets are downloaded using a slightly different format: `<repository>/<asset-identifier>`
+After downloading mods to the cache (or if they are already present in the cache, but not found in the `<game-dir>/.quilt/downloaded_mods` folder) then they will be copied over to a local (per-instance) download cache in `<game>/.quilt/downloaded_mods`, and then loaded for the next cycle.
 
-After downloading mods to the cache (or if they are already present in the cache, but not found in the `<game-dir>/quilt_loader/downloaded_mods` folder) then they will be copied over, and then loaded for the next cycle.
 This `downloaded_mods` folder will use the same file layout as a normal cache folder.
 
 ----------------------
 
-ALEXIIL: EVERYTHING  ABOVE THIS LINE IS FINISHED (in theory - apart from proofreading)
+ALEXIIL: EVERYTHING ABOVE THIS LINE IS FINISHED (in theory - apart from proofreading)
 
 ----------------------
 
@@ -223,6 +197,8 @@ ALEXIIL: EVERYTHING  ABOVE THIS LINE IS FINISHED (in theory - apart from proofre
 ## Drawbacks
 
 Why should we not do this?
+
+The main drawback is that downloading just the mod file is not enough to play
 
 
 ## Rationale and Alternatives
